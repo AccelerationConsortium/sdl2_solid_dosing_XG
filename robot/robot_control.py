@@ -45,17 +45,6 @@ class URController:
         except Exception as e:
             print(f"Error loading locations: {e}")
             self.locations = {}
-    # def movel_to_location(self, loc_name, speed=0.5, acceleration=0.5, asynchronous=False):
-    #     """
-    #     Move linearly to a location using the 'l' (Cartesian pose) from JSON.
-    #     """
-    #     pose = self.locations.get(loc_name, {}).get("l")
-    #     if not pose or len(pose) != 6:
-    #         print(f"Location '{loc_name}' not found or invalid pose data.")
-    #         return False
-    #     print(f"Moving linearly to location '{loc_name}': {pose}")
-    #     self.movel(pose=pose, speed=speed, acceleration=acceleration, asynchronous=asynchronous)
-    #     return True
 
     def get_joints(self):
         joints = self.rtde_r.getActualQ()
@@ -256,7 +245,7 @@ class URController:
         self._rob_loc = "safe_rack"
 
 if __name__ == "__main__":
-    controller = URRTDEController("192.168.254.89")
+    controller = URController("192.168.254.89")
     controller.activate_gripper()
     controller.gripper_position(210)
     controller.jog_joint(-1, 1.0)

@@ -1,3 +1,3 @@
-from.robot_control import URController
+from.robot_control_URArm import URController
 
 __all__ = ["URController"]

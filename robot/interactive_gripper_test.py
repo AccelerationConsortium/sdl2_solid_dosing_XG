@@ -1,7 +1,13 @@
+from dotenv import load_dotenv
 import socket
 import time
+import os
 
-def send_gripper_command(command, ip="192.168.254.89", port=63352):
+load_dotenv()
+
+def send_gripper_command(command, ip=None, port=63352):
+    if ip is None:
+        ip = os.environ.get("ROBOT_IP")
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         s.settimeout(5)
         try:

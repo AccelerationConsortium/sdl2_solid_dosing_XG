@@ -1,0 +1,8 @@
+.env
+robot/my_secrets.py
+workflows/config/workflow_config.json
+matterlab_balances/test.py
+matterlab_balances/Automatic_dosing.py
+matterlab_balances/Naming_dosing_heads.py
+matterlab_balances/mt_balance.py
+# Add other secret/config files as needed

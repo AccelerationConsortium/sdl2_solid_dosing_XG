@@ -14,6 +14,22 @@ class OpenTrons:
     def __init__(self, host_alias:str = None, password="", simulation=False):
         self._connect(host_alias, password)
         self._get_protocol(simulation)
+        self.tip_index_file = str(Path(__file__).parent / "tip_index.json")
+        self._load_tip_index()
+        self.tip_racks = {}  # store loaded tip rack nicknames per pipette
+
+    def _load_tip_index(self):
+        try:
+            with open(self.tip_index_file, "r") as f:
+                self.tip_index = json.load(f)
+        except FileNotFoundError:
+            self.tip_index = {}
+
+    def _save_tip_index(self):
+        with open(self.tip_index_file, "w") as f:
+            json.dump(self.tip_index, f)
+
+
 
     def _connect(self, host_alias:str = None, password=""):
         
@@ -45,17 +61,44 @@ class OpenTrons:
 
     @flow
     def _load_custom_labware(self, nickname: str, labware_config:Dict, location: str):
-        loadname = labware_config["parameters"]["loadName"]
-        self.invoke(f"{loadname}={labware_config}")
-        self.invoke(f"{nickname} = protocol.load_labware_from_definition(labware_def = {loadname}, location = '{location}')")
+        # Ensure correct volume units
+        if 'metadata' in labware_config and labware_config['metadata'].get('displayVolumeUnits') in ['\u00b5L', 'ÂµL']:
+            labware_config['metadata']['displayVolumeUnits'] = 'µL'
+        
+        # Convert the config to a JSON string with proper Unicode handling
+        self.invoke("import json")
+        # Use repr to handle special characters and ensure_ascii=False to preserve Unicode
+        labware_def_str = json.dumps(labware_config, ensure_ascii=False)
+        escaped_str = repr(labware_def_str)[1:-1]  # Remove outer quotes
+        self.invoke(f"labware_def = json.loads('''{escaped_str}''')")
+        
+        # Load the labware and assign to the nickname
+        load_cmd = f"{nickname} = protocol.load_labware_from_definition(labware_def=labware_def, location='{location}')"
+        print(f"Executing: {load_cmd}")  # Debug output
+        self.invoke(load_cmd)
+        
+        # Verify the labware exists in the protocol
+        verify_cmd = f"print(f'Loaded labware {nickname} exists:', '{nickname}' in globals())"
+        self.invoke(verify_cmd)
 
     @flow
     def _load_default_labware(self, nickname:str, loadname:str, location:str):
         self.invoke(f"{nickname} = protocol.load_labware(load_name = '{loadname}', location = '{location}')")
 
+
+
     @flow
-    def _load_default_instrument(self, nickname:str, instrument_name:str, mount:str):
-        self.invoke(f"{nickname} = protocol.load_instrument(instrument_name = '{instrument_name}', mount = '{mount}')")
+    def _load_default_instrument(self, nickname: str, instrument_name: str, mount: str, tip_racks=None):
+        if tip_racks:
+            racks_str = "[" + ",".join(tip_racks) + "]"
+            self.invoke(f"{nickname} = protocol.load_instrument('{instrument_name}', mount='{mount}', tip_racks={racks_str})")
+        else:
+            self.invoke(f"{nickname} = protocol.load_instrument('{instrument_name}', mount='{mount}')")
+        
+
+    # @flow
+    # def _load_default_instrument(self, nickname:str, instrument_name:str, mount:str):
+    #     self.invoke(f"{nickname} = protocol.load_instrument(instrument_name = '{instrument_name}', mount = '{mount}')")
 
     @flow
     def _load_custom_instrument(self, nickname: str, instrument_config: Dict, mount: str):
@@ -88,10 +131,28 @@ class OpenTrons:
         #     "ot_default": True,
         #     "config": {}
         # }
+        tip_racks = instrument.get("tip_racks", None)
+
         if instrument["ot_default"]:
-            self._load_default_instrument(nickname=instrument["nickname"], instrument_name=instrument["instrument_name"], mount=instrument["mount"])
+            self._load_default_instrument(
+                nickname=instrument["nickname"],
+                instrument_name=instrument["instrument_name"],
+                mount=instrument["mount"],
+                tip_racks=tip_racks
+                )
         else:
-            self._load_custom_instrument(nickname=instrument["nickname"], instrument_config=instrument["config"], mount=instrument["mount"])
+            self._load_custom_instrument(
+                nickname=instrument["nickname"],
+                instrument_config=instrument["config"],
+                mount=instrument["mount"]
+                )
+
+        if tip_racks:
+            self.tip_racks[instrument["nickname"]] = tip_racks
+            if instrument["nickname"] not in self.tip_index:
+                self.tip_index[instrument["nickname"]] = 0
+                self._save_tip_index()
+
 
     @flow
     def load_module(self, module: Dict):
@@ -108,7 +169,15 @@ class OpenTrons:
         adapter = module["adapter"]
         self.invoke(f"{nickname} = protocol.load_module(module_name = '{module_name}', location = '{location}')")
         self.invoke(f"{nickname}_adapter = {nickname}.load_adapter(name = '{adapter}')")
-
+    
+    @flow
+    def load_trash_bin(self, nickname: str = "default_trash", location: str = "A3"):
+        """
+        Loads a trash bin fixture in the specified location (API >=2.16).
+        Example: ot.load_trash_bin(location="A3")
+        """
+        self.invoke(f"{nickname} = protocol.load_trash_bin(location = '{location}')")
+        
     @flow
     def home(self):
         self.invoke("protocol.home()")
@@ -151,8 +220,40 @@ class OpenTrons:
         self.invoke(f"{pip_name}.move_to(location = location)")
 
     @flow
-    def pick_up_tip(self, pip_name: str):
-        self.invoke(f"{pip_name}.pick_up_tip(location = location)")
+    def pick_up_tip(self, pip_name: str, location=None):
+        # Get tip info
+        tip_count = self.tip_index.get(pip_name, 0)
+        racks = self.tip_racks.get(pip_name, [])
+
+        if location is not None:
+            # User provided a specific location object
+            self.invoke(f"{pip_name}.pick_up_tip(location={location})")
+        elif racks:
+            # Pick based on saved tip_index
+            rack_index = tip_count // 96
+            well_index = tip_count % 96
+
+            if rack_index >= len(racks):
+                raise Exception(f"All tips used for pipette {pip_name}!")
+
+            rack_name = racks[rack_index]
+
+            rows = 'ABCDEFGH'
+            row = rows[well_index // 12]
+            col = (well_index % 12) + 1
+            well_str = f"{rack_name}['{row}{col}']"
+
+            self.invoke(f"{pip_name}.pick_up_tip(location={well_str})")
+
+            # Increment tip index
+            self.tip_index[pip_name] = tip_count + 1
+            self._save_tip_index()
+        else:
+            # No racks or location provided → fallback to Opentrons automatic sequential pick
+            self.invoke(f"{pip_name}.pick_up_tip()")
+
+
+
 
     @flow
     def return_tip(self, pip_name: str):

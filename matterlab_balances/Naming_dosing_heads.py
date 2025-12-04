@@ -1,9 +1,10 @@
 from mt_balance import MTXPRBalance
 from mt_balance import DosingHeadType
+import os
 import time
 
-BALANCE_IP = "192.168.254.83"
-BALANCE_PASSWORD = "Accelerate"
+BALANCE_IP = os.environ.get("BALANCE_IP")
+BALANCE_PASSWORD = os.environ.get("BALANCE_PASSWORD")
 
 balance = MTXPRBalance (host = BALANCE_IP, password = BALANCE_PASSWORD)
 

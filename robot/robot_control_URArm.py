@@ -7,11 +7,13 @@ import json
 import numpy as np
 from pathlib import Path
 from robot.ur5_rtde_gripper import URArm
-from resources.resource_handler import Handler
-from utils import (
+from robot.resources.resource_handler import Handler
+from robot.utils import (
     logger, configure_global_exception_handler, component_manager
 )
+from dotenv import load_dotenv
 
+load_dotenv()
 
 vial_stock_depth = -52 #distance in mm from prep to vial grip point
 dose_stock_depth = 50 #distance in mm from prep to dose grip point
@@ -20,7 +22,9 @@ dose_stock_depth = 50 #distance in mm from prep to dose grip point
 class URController:
 
 
-    def __init__(self, ur3_ip="192.168.254.89", gripper_connect:bool = True, location_settings: Dict = None, location_file="ur3_1006_locations_converted.json"):
+    def __init__(self, ur3_ip=None, gripper_connect:bool = True, location_settings: Dict = None, location_file="ur3_1006_locations_converted.json"):
+        if ur3_ip is None:
+            ur3_ip = os.environ.get("ROBOT_IP")
         self._gripper_item = None
         self._rob_loc = None
         self.gripper_dist = {
@@ -201,26 +205,24 @@ class URController:
     def vial_2_balance(self, vial_loc:str):
         if self._rob_loc !="safe_rack":
             raise ValueError("start position should be 'safe_rack'")
-        if self._gripper_item is not None:
-            raise ValueError("move to vial rack gripper must be None")
         self.gripper_pos(self.gripper_dist["open"]["vial"])
         self.movel("vial_stock_prep")
         empty_vial = self.vial_stock[vial_loc]
         self.movel(empty_vial.location)
-        self.movel(z = -55, vel = 30)
+        self.movel(z = -55, vel = 40)
         self.gripper_pos(self.gripper_dist["close"]["vial"])
         self._gripper_item = "vial"
-        self.movel(z = 55, vel=30)
+        self.movel(z = 55, vel=40)
         self.movel("vial_stock_prep")
         self.movej("safe_rack")
         self.movej("home_prep_bal")
         self.movej("safe_bal")
-        self.movel("prep_viap_drop",vel=30)
+        self.movel("prep_viap_drop",vel=40)
         self.movel("drop_vial",vel=20)
         self.gripper_pos(self.gripper_dist["open"]["vial"])
         # print("[Debug] Opening gripper...")
         self._gripper_item = None
-        self.movel("prep_viap_drop",vel=20)
+        self.movel("prep_viap_drop",vel=30)
         self.movel("safe_bal")
         self.movej("home_prep_bal")
         self.movej("safe_rack")
@@ -233,49 +235,52 @@ class URController:
 
         self.movej("dos_rack_prep")
         dose = self.dose_stock[dose_loc]
-        self.movel(dose.location, vel=50)
+        self.movel(dose.location, vel=80)
         self.movel(x = 50, vel = 50)
         self.gripper_pos(self.gripper_dist["close"]["dose"])
         self._gripper_item = "dose"
-        self.movel(z=3,vel=20)
-        self.movel(x=-50,vel=20)
-        self.movel(z=60,vel=20)
-        self.movel("dose_stock_back",vel=20)
+        self.movel(z=3,vel=50)
+        self.movel(x=-50,vel=50)
+        self.movel(z=60,vel=50)
+        self.movel("dose_stock_back",vel=80)
         self.movej("out_bal_prep")
-        self.movel("dos_bal_in_prep",vel=20)
-        self.movel("dos_head_up",vel=20)
-        self.movel("dos_head_in",vel=20)
-        self.gripper_pos(self.gripper_dist["open"]["dose"])
-        self.movel("dos_bal_in_prep",vel=20)
-        self.movel("out_bal_prep")
+        self.movel("dos_bal_in_prep",vel=80)
+        self.movel("dos_head_up",vel=80)
+        self.movel("dos_head_in",vel=80)
+        self.gripper_pos(self
+                         .gripper_dist["open"]["dose"])
+        self.movel("dos_bal_in_prep",vel=80)
+        self.movel("out_bal_prep",vel=80)
         self.movej("safe_rack")
         self._rob_loc = "safe_rack"
 
 
-    #TODO: test this function
-    #TODO: add dose_back function
-    def vial_2_OT(self):
+    # Tested vial_2_OT function on Oct 20. bottom_right is A1,Top_right is F1
+    
+    def vial_2_OT(self,vial_loc:str):
         if self._rob_loc != "safe_rack":
             raise ValueError("start position should be 'safe_rack'")
-        if self._gripper_item is not None:
-            raise ValueError("move to vial rack gripper must be None")
+
         self.gripper_pos(self.gripper_dist["open"]["vial"])
-        print("[Debug] Opening gripper...")
+
+  
         self.movej("home_prep_bal")
         self.movej("safe_bal")
-        self.movel("prep_viap_drop")
-        self.movel("drop_vial")
+        self.movel("prep_pick_up_vial", vel=50)
+        self.movel("pick_up_vial", vel=30)
         self.gripper_pos(self.gripper_dist["close"]["vial"])
         print("[Debug] Closing gripper...")
-        self.movel("prep_viap_drop")
+        self.movel("prep_pick_up_vial", vel=30)
         self.movel("safe_bal")
         self.movej("safe_bal_2_ot")
         self.movej("safe_ot")
         self.movej("prep_drop_ot")
-        self.movel("drop_vial_ot")
+        OT_vial = self.vial_sample[vial_loc]
+        self.movel(OT_vial.location, vel=50)
+        self.movel(z = -50, vel=20)
         self.gripper_pos(self.gripper_dist["open"]["vial"])
         print("[Debug] Opening gripper...")
-
+        self.movel(z = 50, vel=20)
         self.movel("prep_drop_ot")
         self.movej("safe_ot")
         self.movej("safe_bal_2_ot")
@@ -288,5 +293,7 @@ class URController:
     # def dose_stock_back(self):
 
 if __name__ == "__main__":
-    controller = URController("192.168.254.89")
+    import os
+    ROBOT_IP = os.environ.get("ROBOT_IP")
+    controller = URController(ROBOT_IP)
     controller.activate_gripper()

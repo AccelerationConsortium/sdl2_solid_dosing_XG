@@ -5,10 +5,12 @@
 # from mt_balance import MTXPRBalanceDosingError
 # from mt_balance import WeighingCaptureMode
 from matterlab_balances import MTXPRBalance, MTXPRBalanceDoors
+from dotenv import load_dotenv
 import time
+import os
 
-BALANCE_IP = "192.168.254.83"
-BALANCE_PASSWORD = "Accelerate"
+BALANCE_IP = os.environ.get("BALANCE_IP")
+BALANCE_PASSWORD = os.environ.get("BALANCE_PASSWORD")
 
 balance = MTXPRBalance (host = BALANCE_IP, password = BALANCE_PASSWORD)
 
@@ -41,7 +43,7 @@ balance.open_door(MTXPRBalanceDoors.RIGHT_OUTER)
 # balance.close_door(MTXPRBalanceDoors.LEFT_OUTER)
 balance.close_door(MTXPRBalanceDoors.RIGHT_OUTER)
 #balance.zero()
-balance.auto_dose (substance_name = substance_name, target_weight_mg= target_weight_mg)
+#balance.auto_dose (substance_name = substance_name, target_weight_mg= target_weight_mg)
 
 # except MTXPRBalanceDosingError as e:
 
